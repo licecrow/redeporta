@@ -1,0 +1,60 @@
+name: Gerar APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  compilar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1 - Baixar o codigo
+        uses: actions/checkout@v4
+
+      - name: 2 - Instalar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 3 - Instalar o Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: 4 - Gerar a base do Android e ajustar permissoes
+        run: |
+          flutter create --platforms=android --org com.redeporta /tmp/redeporta
+          cp -r /tmp/redeporta/android ./android
+          python3 - <<'PY'
+          import re, pathlib
+          p = pathlib.Path("android/app/src/main/AndroidManifest.xml")
+          s = p.read_text()
+          perms = "\n".join([
+            '    <uses-permission android:name="android.permission.INTERNET"/>',
+            '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>',
+            '    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>',
+            '    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>',
+            '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>',
+            '    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"/>',
+          ])
+          s = s.replace("<application", perms + '\n    <application android:usesCleartextTraffic="true"', 1)
+          s = re.sub(r'android:label="[^"]*"', 'android:label="RedePorta"', s, count=1)
+          p.write_text(s)
+          PY
+
+      - name: 5 - Baixar as dependencias
+        run: flutter pub get
+
+      - name: 6 - Compilar o APK
+        run: flutter build apk --release
+
+      - name: 7 - Publicar o APK para download
+        uses: actions/upload-artifact@v4
+        with:
+          name: RedePorta-APK
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
